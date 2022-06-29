@@ -6,6 +6,8 @@ Implementation of Gated State Spaces, from the paper <a href="https://arxiv.org/
 
 It will also contain a few more settings to compare state spaces to a sequence-wise GLU depthwise conv, and even simpler, a parameterized exponential moving average along the sequence dimension. So we get to the bottom of whether state spaces are worth it, or whether it is really all about the `O(L log(L))` FFT convolution trick. Results will be shared in the readme.
 
+I will also pit the GSS module against the <a href="https://github.com/lucidrains/panoptic-transformer">Path-X</a> challenge and see how well it does.
+
 ## Citations
 
 ```bibtex
