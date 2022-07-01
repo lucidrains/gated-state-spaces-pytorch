@@ -87,7 +87,7 @@ class GSS(nn.Module):
         self.to_u = nn.Sequential(nn.Linear(dim, dim_hidden, bias = False), nn.GELU())
         self.to_v = nn.Sequential(nn.Linear(dim, dss_kernel_H, bias = False), nn.GELU())
 
-        self.dss = DSS(dim = dss_kernel_H)
+        self.dss = DSS(dim = dss_kernel_H, kernel_N = dss_kernel_N)
 
         self.to_gate = nn.Linear(dss_kernel_H, dim_hidden, bias = False)
         self.to_out = nn.Linear(dim_hidden, dim)
