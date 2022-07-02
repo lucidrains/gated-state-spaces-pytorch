@@ -61,17 +61,14 @@ class DSS(nn.Module):
         S = (rearrange(Lambda, 'n -> n 1') * rearrange(arange, 'l -> 1 l')).exp()
         C = C * (Lambda.exp() - 1) / Lambda
 
-        K = einsum('h n, n l -> h l', C, S).real
+        K = einsum('h n, n l -> l h', C, S).real
 
         # conv1d fft O(nlog(n))
 
-        u = rearrange(u, 'b l d -> b d l')
+        u_f = rfft(u, n = seq_len * 2, dim = -2)
+        K_f = rfft(K, n = seq_len * 2, dim = -2)
 
-        u_f = rfft(u, n = seq_len * 2, dim = -1)
-        K_f = rfft(K, n = seq_len * 2, dim = -1)
-
-        y = irfft(u_f * K_f, seq_len * 2, dim = -1)[..., :seq_len]
-        y = rearrange(y, 'b d l -> b l d')
+        y = irfft(u_f * K_f, seq_len * 2, dim = -2)[..., :seq_len, :]
 
         return y + residual
 
