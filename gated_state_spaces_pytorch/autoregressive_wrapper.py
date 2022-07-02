@@ -50,9 +50,8 @@ class AutoregressiveWrapper(nn.Module):
         filter_thres=0.9,
         **kwargs
     ):
-        b, seq_len, device = *start_tokens.shape, start_tokens.device
+        b, n, device = *start_tokens.shape, start_tokens.device
 
-        offset = seq_len
         out = start_tokens
 
         for _ in range(seq_len):
@@ -77,8 +76,7 @@ class AutoregressiveWrapper(nn.Module):
                     out = out.masked_fill(mask, self.pad_value)
                     break
 
-        out = out[:, offset:]
-        return out
+        return out[:, n:]
 
     def forward(self, x, **kwargs):
         inp, labels = x[:, :-1], x[:, 1:]
