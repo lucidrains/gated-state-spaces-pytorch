@@ -12,25 +12,21 @@ def exists(val):
 
 # classes
 
-class DSS(nn.Module):
+class EfficientDsConv(nn.Module):
     def __init__(
         self,
         *,
         dim,
-        kernel_N = 512
+        heads,
+        max_seq_len
     ):
         super().__init__()
+        assert (dim % heads) == 0
+
+        self.heads = heads
         self.norm = nn.LayerNorm(dim)
 
-        # Lambda
-
-        self.Lambda_real = nn.Parameter(torch.randn(kernel_N))
-        self.Lambda_imag = nn.Parameter(torch.randn(kernel_N))
-
-        # C
-
-        self.C_real = nn.Parameter(torch.randn(dim, kernel_N))
-        self.C_imag = nn.Parameter(torch.randn(dim, kernel_N))
+        self.weight = nn.Parameter(torch.randn(max_seq_len, heads))
 
         # params D
 
@@ -51,86 +47,93 @@ class DSS(nn.Module):
 
         residual = u * self.param_D
 
-        # derive simple dss kernel
+        # dsconv kernel depends on sequence length
 
-        Lambda = -self.Lambda_real.exp() + 1j * self.Lambda_imag.exp()
-        C = self.C_real + 1j * self.C_imag
-
-        arange = torch.arange(seq_len, device = device)
-
-        S = (rearrange(Lambda, 'n -> n 1') * rearrange(arange, 'l -> 1 l')).exp()
-        C = C * (Lambda.exp() - 1) / Lambda
-
-        K = einsum('h n, n l -> l h', C, S).real
+        K = self.weight[-seq_len:]
 
         # conv1d fft O(nlog(n))
 
         u_f = rfft(u, n = seq_len * 2, dim = -2)
         K_f = rfft(K, n = seq_len * 2, dim = -2)
 
-        y = irfft(u_f * K_f, seq_len * 2, dim = -2)[..., :seq_len, :]
+        u_f = rearrange(u_f, '... (h d) -> ... h d', h = self.heads)
+        K_f = rearrange(K_f, '... -> ... 1')
 
-        return y + residual
+        out = rearrange(u_f * K_f, '... h d -> ... (h d)')
 
-class GSS(nn.Module):
+        out = irfft(out, seq_len * 2, dim = -2)[..., :seq_len, :]
+
+        return out + residual
+
+class GatedDsConv(nn.Module):
     """ Pseudocode 3.2 """
+    """ except state spaces replaced with regular learned convolution kernel """
 
     def __init__(
         self,
         *,
         dim,
+        max_seq_len,
+        heads = 8,
+        dim_dsconv = 512,
         dim_expansion_factor = 4,
-        dss_kernel_N = 512,
-        dss_kernel_H = 256
     ):
         super().__init__()
+        assert (dim_dsconv % heads) == 0
+
         self.norm = nn.LayerNorm(dim)
+        self.max_seq_len = max_seq_len
 
         dim_hidden = int(dim_expansion_factor * dim)
         self.to_u = nn.Sequential(nn.Linear(dim, dim_hidden, bias = False), nn.GELU())
-        self.to_v = nn.Sequential(nn.Linear(dim, dss_kernel_H, bias = False), nn.GELU())
+        self.to_v = nn.Sequential(nn.Linear(dim, dim_dsconv, bias = False), nn.GELU())
 
-        self.dss = DSS(dim = dss_kernel_H, kernel_N = dss_kernel_N)
+        self.dsconv = EfficientDsConv(dim = dim_dsconv, heads = heads, max_seq_len = max_seq_len)
 
-        self.to_gate = nn.Linear(dss_kernel_H, dim_hidden, bias = False)
+        self.to_gate = nn.Linear(dim_dsconv, dim_hidden, bias = False)
         self.to_out = nn.Linear(dim_hidden, dim)
 
     def forward(self, x):
+        assert x.shape[1] <= self.max_seq_len
+
         residual, x = x.clone(), self.norm(x)
 
         u = self.to_u(x)
         v = self.to_v(x)
 
-        v = self.dss(v)
+        v = self.dsconv(v)
 
         uc = self.to_gate(v)
         out = self.to_out(uc * u)
 
         return out + residual
 
-# Gated State Spaces LM
+# Gated Dsconv LM
 
-class GatedStateSpacesLM(nn.Module):
+class GatedDsConvLM(nn.Module):
     def __init__(
         self,
         *,
         num_tokens,
         dim,
         depth,
+        heads = 8,
+        dim_dsconv = 512,
+        max_seq_len = 2048,
         dim_expansion_factor = 4,
-        dss_kernel_N = 512,
-        dss_kernel_H = 256
     ):
         super().__init__()
         self.token_emb = nn.Embedding(num_tokens, dim)
+        self.max_seq_len = max_seq_len
 
         self.layers = nn.ModuleList([])
         for _ in range(depth):
             self.layers.append(
-                GSS(
+                GatedDsConv(
                     dim = dim,
-                    dss_kernel_H = dss_kernel_H,
-                    dss_kernel_N = dss_kernel_N,
+                    heads = heads,
+                    max_seq_len = max_seq_len,
+                    dim_dsconv = dim_dsconv,
                     dim_expansion_factor = dim_expansion_factor
                 )
             )
@@ -138,10 +141,12 @@ class GatedStateSpacesLM(nn.Module):
         self.to_logits = nn.Linear(dim, num_tokens, bias = False)
 
     def forward(self, x, labels = None):
+        assert x.shape[1] <= self.max_seq_len
+
         x = self.token_emb(x)
 
-        for gss in self.layers:
-            x = gss(x)
+        for dsconv in self.layers:
+            x = dsconv(x)
 
         logits = self.to_logits(x)
 
