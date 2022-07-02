@@ -27,9 +27,9 @@ gss = GSS(
     dss_kernel_H = 256
 )
 
-x = torch.randn(1, 1024, 512)
+x = torch.randn(1, 65536, 512)
 
-out = gss(x) # (1, 1024, 512)
+out = gss(x) # (1, 65536, 512)
 ```
 
 Gated state spaces language model
