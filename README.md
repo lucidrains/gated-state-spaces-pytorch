@@ -32,7 +32,7 @@ x = torch.randn(1, 1024, 512)
 out = gss(x) # (1, 1024, 512)
 ```
 
-Gated statespaces language model
+Gated state spaces language model
 
 ```python
 import torch

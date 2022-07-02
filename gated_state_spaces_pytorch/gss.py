@@ -130,7 +130,8 @@ class GatedStateSpacesLM(nn.Module):
                 GSS(
                     dim = dim,
                     dss_kernel_H = dss_kernel_H,
-                    dss_kernel_N = dss_kernel_N
+                    dss_kernel_N = dss_kernel_N,
+                    dim_expansion_factor = dim_expansion_factor
                 )
             ]))
 
