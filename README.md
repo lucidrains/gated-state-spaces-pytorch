@@ -32,6 +32,26 @@ x = torch.randn(1, 1024, 512)
 out = gss(x) # (1, 1024, 512)
 ```
 
+Gated statespaces language model
+
+```python
+import torch
+from gated_state_spaces_pytorch import GatedStateSpacesLM
+
+gss_lm = GatedStateSpacesLM(
+    num_tokens = 20000,
+    depth = 12,
+    dim = 512,
+    dim_expansion_factor = 4,
+    dss_kernel_N = 512,
+    dss_kernel_H = 256
+)
+
+ids = torch.randint(0, 20000, (1, 1024))
+
+logits = gss_lm(ids) # (1, 1024, 20000)
+```
+
 ## Todo
 
 - [x] enwik8
