@@ -1,8 +1,14 @@
 import torch
+import torch.nn.functional as F
 from torch import nn, einsum
 from torch.fft import rfft, irfft
 
 from einops import rearrange
+
+# functions
+
+def exists(val):
+    return val is not None
 
 # classes
 
@@ -104,3 +110,45 @@ class GSS(nn.Module):
         out = self.to_out(uc * u)
 
         return out + residual
+
+# Gated State Spaces LM
+
+class GatedStateSpacesLM(nn.Module):
+    def __init__(
+        self,
+        *,
+        num_tokens,
+        dim,
+        depth,
+        dim_expansion_factor = 4,
+        dss_kernel_N = 512,
+        dss_kernel_H = 256
+    ):
+        super().__init__()
+        self.token_emb = nn.Embedding(num_tokens, dim)
+
+        self.layers = nn.ModuleList([])
+        for _ in range(depth):
+            self.layers.append(nn.ModuleList([
+                GSS(
+                    dim = dim,
+                    dss_kernel_H = dss_kernel_H,
+                    dss_kernel_N = dss_kernel_N
+                )
+            ]))
+
+        self.to_logits = nn.Linear(dim, num_tokens, bias = False)
+
+    def forward(self, x, labels = None):
+        x = self.token_emb(x)
+
+        for gss, in self.layers:
+            x = gss(x)
+
+        logits = self.to_logits(x)
+
+        if not exists(labels):
+            return logits
+
+        logits = rearrange(logits, 'b n c -> b c n')
+        return F.cross_entropy(logits, labels)

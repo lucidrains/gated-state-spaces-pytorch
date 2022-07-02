@@ -34,8 +34,8 @@ out = gss(x) # (1, 1024, 512)
 
 ## Todo
 
-- [ ] enwik8
-- [ ] gss lm class
+- [x] enwik8
+- [x] gss lm class
 - [ ] gss + local attention lm class
 - [ ] add dsconv + learned ema
 
