@@ -56,8 +56,8 @@ logits = gss_lm(ids) # (1, 1024, 20000)
 
 - [x] enwik8
 - [x] gss lm class
-- [ ] gss + local attention lm class
-- [ ] add dsconv + learned ema
+- [x] add dsconv + learned ema
+- [ ] add attention.
 
 ## Citations
 
