@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 setup(
   name = 'gated-state-spaces-pytorch',
   packages = find_packages(exclude=[]),
-  version = '0.0.10',
+  version = '0.0.11',
   license='MIT',
   description = 'Gated State Spaces - GSS - Pytorch',
   author = 'Phil Wang',

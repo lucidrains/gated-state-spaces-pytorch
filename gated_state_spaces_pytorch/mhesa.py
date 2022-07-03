@@ -39,13 +39,14 @@ def conv1d_fft(x, weights, dim = -2, weight_dim = -1):
 
 # classes
 
-class EfficientDsConv(nn.Module):
+class MHESA(nn.Module):
+    """ used for time-series in ETSFormer https://arxiv.org/abs/2202.01381 """
+
     def __init__(
         self,
         *,
         dim,
-        heads,
-        max_seq_len
+        heads
     ):
         super().__init__()
         assert (dim % heads) == 0
@@ -53,7 +54,7 @@ class EfficientDsConv(nn.Module):
         self.heads = heads
         self.norm = nn.LayerNorm(dim)
 
-        self.weight = nn.Parameter(torch.randn(max_seq_len, heads))
+        self.alphas = nn.Parameter(torch.randn(heads))
 
         # params D
 
@@ -63,7 +64,7 @@ class EfficientDsConv(nn.Module):
         """
         einstein notation:
         b - batch
-        h - heads (or groups)
+        h - heads
         l - sequence length
         d - dimension
         """
@@ -75,9 +76,11 @@ class EfficientDsConv(nn.Module):
 
         residual = u * self.param_D
 
-        # dsconv kernel depends on sequence length
+        # weights derived from alphas (learned exponential smoothing decay rate)
 
-        K = self.weight[-seq_len:]
+        alphas = self.alphas.sigmoid()
+        reversed_powers = torch.arange(seq_len - 1, -1, -1, device = device)
+        K = alphas * ((1 - alphas) ** rearrange(reversed_powers, '... l -> ... l 1'))
 
         # conv1d fft O(nlog(n))
 
@@ -89,43 +92,40 @@ class EfficientDsConv(nn.Module):
 
         return out + residual
 
-class GatedDsConv(nn.Module):
+class GatedMHESA(nn.Module):
     """ Pseudocode 3.2 """
-    """ except state spaces replaced with regular learned convolution kernel """
+    """ except state spaces replaced with multi-head exponential smoothing with learned alpha """
+    """ used for time-series in ETSFormer https://arxiv.org/abs/2202.01381 """
 
     def __init__(
         self,
         *,
-        dim,
-        max_seq_len,
+        dim,    
         heads = 8,
-        dim_dsconv = 512,
+        dim_mhesa = 512,
         dim_expansion_factor = 4,
     ):
         super().__init__()
-        assert (dim_dsconv % heads) == 0
+        assert (dim_mhesa % heads) == 0
 
         self.norm = nn.LayerNorm(dim)
-        self.max_seq_len = max_seq_len
 
         dim_hidden = int(dim_expansion_factor * dim)
         self.to_u = nn.Sequential(nn.Linear(dim, dim_hidden, bias = False), nn.GELU())
-        self.to_v = nn.Sequential(nn.Linear(dim, dim_dsconv, bias = False), nn.GELU())
+        self.to_v = nn.Sequential(nn.Linear(dim, dim_mhesa, bias = False), nn.GELU())
 
-        self.dsconv = EfficientDsConv(dim = dim_dsconv, heads = heads, max_seq_len = max_seq_len)
+        self.mhesa = MHESA(dim = dim_mhesa, heads = heads)
 
-        self.to_gate = nn.Linear(dim_dsconv, dim_hidden, bias = False)
+        self.to_gate = nn.Linear(dim_mhesa, dim_hidden, bias = False)
         self.to_out = nn.Linear(dim_hidden, dim)
 
     def forward(self, x):
-        assert x.shape[1] <= self.max_seq_len
-
         residual, x = x.clone(), self.norm(x)
 
         u = self.to_u(x)
         v = self.to_v(x)
 
-        v = self.dsconv(v)
+        v = self.mhesa(v)
 
         uc = self.to_gate(v)
         out = self.to_out(uc * u)
@@ -134,7 +134,7 @@ class GatedDsConv(nn.Module):
 
 # Gated Dsconv LM
 
-class GatedDsConvLM(nn.Module):
+class GatedExponentialSmoothingLM(nn.Module):
     def __init__(
         self,
         *,
@@ -142,22 +142,19 @@ class GatedDsConvLM(nn.Module):
         dim,
         depth,
         heads = 8,
-        dim_dsconv = 512,
-        max_seq_len = 2048,
+        dim_mhesa = 512,
         dim_expansion_factor = 4,
     ):
         super().__init__()
         self.token_emb = nn.Embedding(num_tokens, dim)
-        self.max_seq_len = max_seq_len
 
         self.layers = nn.ModuleList([])
         for _ in range(depth):
             self.layers.append(
-                GatedDsConv(
+                GatedMHESA(
                     dim = dim,
                     heads = heads,
-                    max_seq_len = max_seq_len,
-                    dim_dsconv = dim_dsconv,
+                    dim_mhesa = dim_mhesa,
                     dim_expansion_factor = dim_expansion_factor
                 )
             )
@@ -165,12 +162,10 @@ class GatedDsConvLM(nn.Module):
         self.to_logits = nn.Linear(dim, num_tokens, bias = False)
 
     def forward(self, x, labels = None):
-        assert x.shape[1] <= self.max_seq_len
-
         x = self.token_emb(x)
 
-        for dsconv in self.layers:
-            x = dsconv(x)
+        for mhesa in self.layers:
+            x = mhesa(x)
 
         logits = self.to_logits(x)
 
