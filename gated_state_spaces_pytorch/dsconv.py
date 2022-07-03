@@ -4,11 +4,31 @@ from torch import nn, einsum
 from torch.fft import rfft, irfft
 
 from einops import rearrange
+from scipy.fftpack import next_fast_len
 
 # functions
 
 def exists(val):
     return val is not None
+
+def conv1d_fft(x, weights, dim = -2, weight_dim = -1):
+    # O(N log(N)) 1d convolution using some fourier trick
+
+    N = x.shape[dim]
+    M = weights.shape[weight_dim]
+
+    fast_len = next_fast_len(N + M - 1)
+
+    f_x = torch.fft.rfft(x, n = fast_len, dim = dim)
+    f_weight = torch.fft.rfft(weights, n = fast_len, dim = weight_dim)
+
+    f_v_weight = f_x * rearrange(f_weight.conj(), '... -> ... 1')
+    out = torch.fft.irfft(f_v_weight, fast_len, dim = dim)
+    out = out.roll(-1, dims = (dim,))
+
+    indices = torch.arange(start = fast_len - N, end = fast_len, dtype = torch.long, device = x.device)
+    out = out.index_select(dim, indices)
+    return out
 
 # classes
 
@@ -53,15 +73,11 @@ class EfficientDsConv(nn.Module):
 
         # conv1d fft O(nlog(n))
 
-        u_f = rfft(u, n = seq_len * 2, dim = -2)
-        K_f = rfft(K, n = seq_len * 2, dim = -2)
+        u = rearrange(u, '... (h d) -> ... h d', h = self.heads)
 
-        u_f = rearrange(u_f, '... (h d) -> ... h d', h = self.heads)
-        K_f = rearrange(K_f, '... -> ... 1')
+        out = conv1d_fft(u, K, dim = -3, weight_dim = -2)
 
-        out = rearrange(u_f * K_f, '... h d -> ... (h d)')
-
-        out = irfft(out, seq_len * 2, dim = -2)[..., :seq_len, :]
+        out = rearrange(out, '... h d -> ... (h d)')
 
         return out + residual
 
