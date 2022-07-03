@@ -59,7 +59,7 @@ class EfficientDsConv(nn.Module):
         u_f = rearrange(u_f, '... (h d) -> ... h d', h = self.heads)
         K_f = rearrange(K_f, '... -> ... 1')
 
-        out = rearrange(u_f * K_f.conj(), '... h d -> ... (h d)')
+        out = rearrange(u_f * K_f, '... h d -> ... (h d)')
 
         out = irfft(out, seq_len * 2, dim = -2)[..., :seq_len, :]
 
