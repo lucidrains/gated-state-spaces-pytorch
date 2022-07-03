@@ -81,9 +81,11 @@ class GSS(nn.Module):
         dim,
         dim_expansion_factor = 4,
         dss_kernel_N = 512,
-        dss_kernel_H = 256
+        dss_kernel_H = 256,
+        reverse_seq = False
     ):
         super().__init__()
+        self.reverse_seq = reverse_seq
         self.norm = nn.LayerNorm(dim)
 
         dim_hidden = int(dim_expansion_factor * dim)
@@ -96,6 +98,9 @@ class GSS(nn.Module):
         self.to_out = nn.Linear(dim_hidden, dim)
 
     def forward(self, x):
+        if self.reverse_seq:
+            x = torch.flip(x, dims = (1,))
+
         residual, x = x.clone(), self.norm(x)
 
         u = self.to_u(x)
@@ -106,7 +111,12 @@ class GSS(nn.Module):
         uc = self.to_gate(v)
         out = self.to_out(uc * u)
 
-        return out + residual
+        out = out + residual
+
+        if self.reverse_seq:
+            out = torch.flip(out, dims = (1,))
+
+        return out
 
 # Gated State Spaces LM
 

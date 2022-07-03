@@ -46,10 +46,12 @@ class MHESA(nn.Module):
         self,
         *,
         dim,
-        heads
+        heads,
+        reverse_seq = False
     ):
         super().__init__()
         assert (dim % heads) == 0
+        self.reverse_seq = reverse_seq
 
         self.heads = heads
         self.norm = nn.LayerNorm(dim)
@@ -68,6 +70,9 @@ class MHESA(nn.Module):
         l - sequence length
         d - dimension
         """
+
+        if self.reverse_seq:
+            x = torch.flip(x, dims = (1,))
 
         device, seq_len = x.device, x.shape[1]
         u = self.norm(x)
@@ -90,7 +95,12 @@ class MHESA(nn.Module):
 
         out = rearrange(out, '... h d -> ... (h d)')
 
-        return out + residual
+        out = out + residual
+
+        if self.reverse_seq:
+            out = torch.flip(out, dims = (1,))
+
+        return out
 
 class GatedMHESA(nn.Module):
     """ Pseudocode 3.2 """

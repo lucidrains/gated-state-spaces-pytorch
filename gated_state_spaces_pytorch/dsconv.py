@@ -101,9 +101,11 @@ class GatedDsConv(nn.Module):
         heads = 8,
         dim_dsconv = 512,
         dim_expansion_factor = 4,
+        reverse_seq = False
     ):
         super().__init__()
         assert (dim_dsconv % heads) == 0
+        self.reverse_seq = reverse_seq
 
         self.norm = nn.LayerNorm(dim)
         self.max_seq_len = max_seq_len
@@ -120,6 +122,9 @@ class GatedDsConv(nn.Module):
     def forward(self, x):
         assert x.shape[1] <= self.max_seq_len
 
+        if self.reverse_seq:
+            x = torch.flip(x, dims = (1,))
+
         residual, x = x.clone(), self.norm(x)
 
         u = self.to_u(x)
@@ -130,7 +135,12 @@ class GatedDsConv(nn.Module):
         uc = self.to_gate(v)
         out = self.to_out(uc * u)
 
-        return out + residual
+        out = out + residual
+
+        if self.reverse_seq:
+            out = torch.flip(out, dims = (1,))
+
+        return out
 
 # Gated Dsconv LM
 
