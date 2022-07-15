@@ -17,7 +17,8 @@ class DSS(nn.Module):
         self,
         *,
         dim,
-        kernel_N = 512
+        kernel_N = 512,
+        dss_kernel_lambda_imag_exp = True
     ):
         super().__init__()
         self.norm = nn.LayerNorm(dim)
@@ -36,6 +37,10 @@ class DSS(nn.Module):
 
         self.param_D = nn.Parameter(torch.randn(dim))
 
+        # whether to exponentiate lambda imag @albertfgu says it is not accurate to s4 original designs (but it is present in the pseudocode)
+
+        self.dss_kernel_lambda_imag_exp = dss_kernel_lambda_imag_exp
+
     def forward(self, x):
         """
         einstein notation:
@@ -53,7 +58,9 @@ class DSS(nn.Module):
 
         # derive simple dss kernel
 
-        Lambda = -self.Lambda_real.exp() + 1j * self.Lambda_imag.exp()
+        Lambda_imag = self.Lambda_imag.exp() if self.dss_kernel_lambda_imag_exp else self.Lambda_imag
+
+        Lambda = -self.Lambda_real.exp() + 1j * self.Lambda_imag
         C = self.C_real + 1j * self.C_imag
 
         arange = torch.arange(seq_len, device = device)
@@ -82,7 +89,8 @@ class GSS(nn.Module):
         dim_expansion_factor = 4,
         dss_kernel_N = 512,
         dss_kernel_H = 256,
-        reverse_seq = False
+        reverse_seq = False,
+        dss_kernel_lambda_imag_exp = True
     ):
         super().__init__()
         self.reverse_seq = reverse_seq
@@ -92,7 +100,7 @@ class GSS(nn.Module):
         self.to_u = nn.Sequential(nn.Linear(dim, dim_hidden, bias = False), nn.GELU())
         self.to_v = nn.Sequential(nn.Linear(dim, dss_kernel_H, bias = False), nn.GELU())
 
-        self.dss = DSS(dim = dss_kernel_H, kernel_N = dss_kernel_N)
+        self.dss = DSS(dim = dss_kernel_H, kernel_N = dss_kernel_N, dss_kernel_lambda_imag_exp = dss_kernel_lambda_imag_exp)
 
         self.to_gate = nn.Linear(dss_kernel_H, dim_hidden, bias = False)
         self.to_out = nn.Linear(dim_hidden, dim)
@@ -129,7 +137,8 @@ class GatedStateSpacesLM(nn.Module):
         depth,
         dim_expansion_factor = 4,
         dss_kernel_N = 512,
-        dss_kernel_H = 256
+        dss_kernel_H = 256,
+        dss_kernel_lambda_imag_exp = True
     ):
         super().__init__()
         self.token_emb = nn.Embedding(num_tokens, dim)
@@ -141,7 +150,8 @@ class GatedStateSpacesLM(nn.Module):
                     dim = dim,
                     dss_kernel_H = dss_kernel_H,
                     dss_kernel_N = dss_kernel_N,
-                    dim_expansion_factor = dim_expansion_factor
+                    dim_expansion_factor = dim_expansion_factor,
+                    dss_kernel_lambda_imag_exp = dss_kernel_lambda_imag_exp
                 )
             )
 
