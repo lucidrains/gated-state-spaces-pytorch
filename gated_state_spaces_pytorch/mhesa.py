@@ -57,6 +57,7 @@ class MHESA(nn.Module):
         self.norm = nn.LayerNorm(dim)
 
         self.alphas = nn.Parameter(torch.randn(heads))
+        self.dampen_factors = nn.Parameter(torch.randn(heads))
 
         # params D
 
@@ -84,8 +85,10 @@ class MHESA(nn.Module):
         # weights derived from alphas (learned exponential smoothing decay rate)
 
         alphas = self.alphas.sigmoid()
+        dampen_factors = self.dampen_factors.sigmoid()
+
         reversed_powers = torch.arange(seq_len - 1, -1, -1, device = device)
-        K = alphas * ((1 - alphas) ** rearrange(reversed_powers, '... l -> ... l 1'))
+        K = alphas * (((1 - alphas) * dampen_factors) ** rearrange(reversed_powers, '... l -> ... l 1'))
 
         # conv1d fft O(nlog(n))
 

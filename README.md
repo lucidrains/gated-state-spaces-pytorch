@@ -8,6 +8,8 @@ It will also contain a few more settings to compare state spaces to a sequence-w
 
 I will also pit the GSS module against the <a href="https://github.com/lucidrains/panoptic-transformer">Path-X</a> challenge and see how well it does.
 
+Update: <a href="https://arxiv.org/abs/2209.10655">This paper</a> has beat S4 on LRA using multi-headed EMA + single head attention.
+
 ## Install
 
 ```bash
