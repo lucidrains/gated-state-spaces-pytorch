@@ -44,8 +44,7 @@ class EfficientDsConv(nn.Module):
         self,
         *,
         dim,
-        heads,
-        max_seq_len
+        heads
     ):
         super().__init__()
         assert (dim % heads) == 0
@@ -53,7 +52,7 @@ class EfficientDsConv(nn.Module):
         self.heads = heads
         self.norm = nn.LayerNorm(dim)
 
-        self.weight = nn.Parameter(torch.randn(max_seq_len, heads))
+        self.to_weight = nn.Linear(dim, heads, bias = False)
 
         # params D
 
@@ -77,7 +76,8 @@ class EfficientDsConv(nn.Module):
 
         # dsconv kernel depends on sequence length
 
-        K = self.weight[-seq_len:]
+        K = self.to_weight(x)
+        K = torch.flip(K, dims = (1,))
 
         # conv1d fft O(nlog(n))
 
@@ -97,7 +97,6 @@ class GatedDsConv(nn.Module):
         self,
         *,
         dim,
-        max_seq_len,
         heads = 8,
         dim_dsconv = 512,
         dim_expansion_factor = 4,
@@ -108,20 +107,17 @@ class GatedDsConv(nn.Module):
         self.reverse_seq = reverse_seq
 
         self.norm = nn.LayerNorm(dim)
-        self.max_seq_len = max_seq_len
 
         dim_hidden = int(dim_expansion_factor * dim)
         self.to_u = nn.Sequential(nn.Linear(dim, dim_hidden, bias = False), nn.GELU())
         self.to_v = nn.Sequential(nn.Linear(dim, dim_dsconv, bias = False), nn.GELU())
 
-        self.dsconv = EfficientDsConv(dim = dim_dsconv, heads = heads, max_seq_len = max_seq_len)
+        self.dsconv = EfficientDsConv(dim = dim_dsconv, heads = heads)
 
         self.to_gate = nn.Linear(dim_dsconv, dim_hidden, bias = False)
         self.to_out = nn.Linear(dim_hidden, dim)
 
     def forward(self, x):
-        assert x.shape[1] <= self.max_seq_len
-
         if self.reverse_seq:
             x = torch.flip(x, dims = (1,))
 
@@ -166,7 +162,6 @@ class GatedDsConvLM(nn.Module):
                 GatedDsConv(
                     dim = dim,
                     heads = heads,
-                    max_seq_len = max_seq_len,
                     dim_dsconv = dim_dsconv,
                     dim_expansion_factor = dim_expansion_factor
                 )
